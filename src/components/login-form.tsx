@@ -112,7 +112,7 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
           <Label htmlFor="rememberMe">Remember me</Label>
         </div>
         {error ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-destructive text-sm" role="alert">
             {error}
           </p>
         ) : null}
@@ -121,7 +121,7 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
         </Button>
       </form>
 
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         Don\'t have an account?{" "}
         <Link
           href="/sign-up"
@@ -136,7 +136,7 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
           <Separator className="w-full" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-background px-2 text-muted-foreground">
+          <span className="bg-background text-muted-foreground px-2">
             Or continue with
           </span>
         </div>
