@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,187 +8,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// =========================================================================
-// I. ENUMS
-// =========================================================================
-
-enum ChatRole {
-  OWNER
-  ADMIN
-  MEMBER
-}
-
-// =========================================================================
-// II. AUTHENTICATION & USER MANAGEMENT MODELS
-// =========================================================================
-
 model User {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  name          String?
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  username      String?   @unique
-  bio           String?
-  lastSeen      DateTime?
+  id              String    @id @map("_id")
+  name            String
+  email           String
+  emailVerified   Boolean   @default(false)
+  image           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+  username        String?
+  displayUsername String?
+  sessions        Session[]
+  accounts        Account[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  role       String    @default("user")
-  banned     Boolean?  @default(false)
-  banReason  String?
-  banExpires DateTime?
-
-  // Auth Relations
-  sessions Session[]
-  accounts Account[]
-
-  // Chat Relations
-  membership   ChatMember[]
-  sentMessages Message[]            @relation("SenderMessages")
-  readReceipts MessageReadReceipt[]
-
-  // Contact Relations (Optional)
-  ownedContacts     Contact[] @relation("OwnedContacts")
-  appearsInContacts Contact[] @relation("AppearsInContacts")
-
+  @@unique([email])
+  @@unique([username])
   @@map("user")
 }
 
 model Session {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  id        String   @id @map("_id")
   expiresAt DateTime
-  token     String   @unique
+  token     String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  userId    String   @db.ObjectId
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([token])
   @@map("session")
 }
 
 model Account {
-  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
-  accountId            String
-  providerId           String
-  accessToken          String?
-  refreshToken         String?
-  accessTokenExpiresAt DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  userId               String    @db.ObjectId
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                    String    @id @map("_id")
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  @@unique([providerId, accountId])
   @@map("account")
 }
 
 model Verification {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  id         String   @id @map("_id")
   identifier String
   value      String
   expiresAt  DateTime
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  updatedAt  DateTime @default(now()) @updatedAt
 
-  @@unique([identifier, value])
   @@map("verification")
-}
-
-// =========================================================================
-// III. CHAT & MESSAGE MODELS
-// =========================================================================
-
-model Chat {
-  id        String  @id @default(auto()) @map("_id") @db.ObjectId
-  name      String?
-  type      String  @default("private")
-  chatImage String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  messages Message[]
-  members  ChatMember[]
-
-  lastMessageId String?  @unique @db.ObjectId
-  lastMessage   Message? @relation("LastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-
-  @@index([type])
-  @@map("chat")
-}
-
-model ChatMember {
-  id         String    @id @default(auto()) @map("_id") @db.ObjectId
-  role       ChatRole  @default(MEMBER)
-  joinedAt   DateTime  @default(now())
-  mutedUntil DateTime?
-
-  chatId String @db.ObjectId
-  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  userId String @db.ObjectId
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([chatId, userId])
-  @@index([userId])
-  @@map("chat_member")
-}
-
-model Message {
-  id        String  @id @default(auto()) @map("_id") @db.ObjectId
-  content   String
-  mediaUrl  String?
-  mediaType String?
-
-  createdAt DateTime  @default(now())
-  isEdited  Boolean   @default(false)
-  deletedAt DateTime?
-
-  chatId String @db.ObjectId
-  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  senderId String @db.ObjectId
-  sender   User   @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  chatAsLastMessage Chat? @relation("LastMessage")
-
-  repliedToId String?   @db.ObjectId
-  repliedTo   Message?  @relation("Replies", fields: [repliedToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  replies     Message[] @relation("Replies")
-
-  readBy MessageReadReceipt[]
-
-  @@index([chatId, createdAt])
-  @@map("message")
-}
-
-model MessageReadReceipt {
-  id     String   @id @default(auto()) @map("_id") @db.ObjectId
-  readAt DateTime @default(now())
-
-  messageId String  @db.ObjectId
-  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  userId    String  @db.ObjectId
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([messageId, userId])
-  @@map("message_read_receipt")
-}
-
-// =========================================================================
-// IV. CONTACTS (Optional)
-// =========================================================================
-
-model Contact {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  ownerId   String   @db.ObjectId
-  owner     User     @relation("OwnedContacts", fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  contactId String   @db.ObjectId
-  contact   User     @relation("AppearsInContacts", fields: [contactId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  alias     String?
-  createdAt DateTime @default(now())
-
-  @@unique([ownerId, contactId])
-  @@map("contact")
 }

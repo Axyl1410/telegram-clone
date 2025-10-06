@@ -14,9 +14,9 @@ export default function SignUpPage() {
         <div className="text-xl font-semibold">Axyl</div>
         <div className="max-w-md space-y-4">
           <h1 className="text-4xl leading-tight font-medium xl:text-5xl">
-            Start building with your free plan
+            Create an account to start messaging
           </h1>
-          <p>No credit card required.</p>
+          <p>Free, secure, and synced across devices.</p>
         </div>
         <div className="text-muted-foreground text-xs">
           © 2025 All rights reserved.
