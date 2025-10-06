@@ -1,145 +1,166 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type * as React from "react";
-import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 type SignupFormProps = React.HTMLAttributes<HTMLDivElement>;
 
+const signupSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  username: z.string().min(1, "Username is required"),
+  email: z.string().email({ message: "Invalid email" }),
+  password: z.string().min(6, "Min 6 characters"),
+});
+
 export function SignupForm({ className, ...props }: SignupFormProps) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const form = useForm<z.infer<typeof signupSchema>>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: {
+      name: "",
+      username: "",
+      email: "",
+      password: "",
+    },
+  });
 
-  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  async function onSubmit(values: z.infer<typeof signupSchema>) {
     try {
       const { error: signUpError } = await authClient.signUp.email({
-        email,
-        password,
-        name,
-        username,
-        // Prefer a friendly displayUsername; fallback to `name` or raw username
-        displayUsername: name?.trim() ? name : username,
+        email: values.email,
+        password: values.password,
+        name: values.name,
+        username: values.username,
+        displayUsername: values.name?.trim() ? values.name : values.username,
       });
       if (signUpError) {
-        const message = signUpError.message || "Failed to sign up";
-        setError(message);
-        toast.error(message);
+        toast.error(signUpError.message || "Failed to sign up");
       } else {
         toast.success("Account created successfully");
         router.push("/sign-in");
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to sign up";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
+    } catch (_err) {
+      toast.error("Failed to sign up");
     }
-  };
+  }
 
   const signInWith = async (provider: "google" | "github" | "discord") => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { error: socialError } = await authClient.signIn.social({
-        provider,
-      });
-      if (socialError) {
-        const message = socialError.message || "Failed to continue";
-        setError(message);
-        toast.error(message);
-      } else {
-        toast.success("Redirecting to provider…");
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to continue";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
+    const { error } = await authClient.signIn.social({ provider });
+    if (error) toast.error(error.message || "Failed to continue");
   };
+
+  const loading = form.formState.isSubmitting;
 
   return (
     <div className={cn("w-full max-w-sm space-y-4", className)} {...props}>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="name">Name</Label>
-          <Input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setName(e.target.value)
-            }
-            placeholder="Your name"
-            required
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit(onSubmit, () => {
+            const errs = form.formState.errors as Record<
+              string,
+              { message?: string }
+            >;
+            const first = Object.values(errs)[0]?.message;
+            if (first) toast.error(first);
+          })}
+          className="space-y-4"
+        >
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel htmlFor="name">Name</FormLabel>
+                <FormControl>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Your name"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="username">Username</Label>
-          <Input
-            id="username"
-            type="text"
-            value={username}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setUsername(e.target.value)
-            }
-            placeholder="your_username"
-            required
+          <FormField
+            control={form.control}
+            name="username"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel htmlFor="username">Username</FormLabel>
+                <FormControl>
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="your_username"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setEmail(e.target.value)
-            }
-            placeholder="you@example.com"
-            required
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel htmlFor="email">Email</FormLabel>
+                <FormControl>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setPassword(e.target.value)
-            }
-            placeholder="••••••••"
-            required
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel htmlFor="password">Password</FormLabel>
+                <FormControl>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-        </div>
-        {error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {error}
-          </p>
-        ) : null}
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "Creating account..." : "Create account"}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Creating account..." : "Create account"}
+          </Button>
+        </form>
+      </Form>
 
       <p className="text-muted-foreground text-sm">
         Already have an account?{" "}

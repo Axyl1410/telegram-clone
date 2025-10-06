@@ -2,157 +2,217 @@
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type * as React from "react";
-import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 type LoginFormProps = React.HTMLAttributes<HTMLDivElement>;
 
+const loginSchema = z
+  .object({
+    email: z.string().optional(),
+    username: z.string().optional(),
+    password: z.string().min(6, "Min 6 characters"),
+    rememberMe: z.boolean(),
+    useUsername: z.boolean(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.useUsername) {
+      if (!val.username || !val.username.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["username"],
+          message: "Username is required",
+        });
+      }
+    } else {
+      const emailCheck = z
+        .string()
+        .email()
+        .safeParse(val.email ?? "");
+      if (!emailCheck.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["email"],
+          message: "Valid email is required",
+        });
+      }
+    }
+  });
+
 export function LoginForm({ className, ...props }: LoginFormProps) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [useUsername, setUseUsername] = useState(false);
+  const form = useForm<
+    z.infer<typeof loginSchema>,
+    unknown,
+    z.infer<typeof loginSchema>
+  >({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      username: "",
+      password: "",
+      rememberMe: false,
+      useUsername: false,
+    },
+  });
 
-  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  async function onSubmit(values: z.infer<typeof loginSchema>) {
     try {
-      const { error: signInError } = useUsername
+      const { error: signInError } = values.useUsername
         ? await authClient.signIn.username({
-            username,
-            password,
-            rememberMe,
+            username: values.username as string,
+            password: values.password,
+            rememberMe: values.rememberMe,
           })
         : await authClient.signIn.email({
-            email,
-            password,
-            rememberMe,
+            email: values.email as string,
+            password: values.password,
+            rememberMe: values.rememberMe,
           });
       if (signInError) {
-        const message = signInError.message || "Failed to sign in";
-        setError(message);
-        toast.error(message);
+        toast.error(signInError.message || "Failed to sign in");
       } else {
         toast.success("Signed in successfully");
         router.push("/");
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to sign in";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
+    } catch (_err) {
+      toast.error("Failed to sign in");
     }
-  };
+  }
 
   const signInWith = async (provider: "google" | "github" | "discord") => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { error: socialError } = await authClient.signIn.social({
-        provider,
-      });
-      if (socialError) {
-        const message = socialError.message || "Failed to sign in";
-        setError(message);
-        toast.error(message);
-      } else {
-        toast.success("Redirecting to provider…");
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to sign in";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
+    const { error } = await authClient.signIn.social({ provider });
+    if (error) toast.error(error.message || "Failed to sign in");
   };
+
+  const loading = form.formState.isSubmitting;
 
   return (
     <div className={cn("w-full max-w-sm space-y-4", className)} {...props}>
-      <form onSubmit={onSubmit} className="space-y-4">
-        {useUsername ? (
-          <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input
-              id="username"
-              type="text"
-              value={username}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setUsername(e.target.value)
-              }
-              placeholder="your_username"
-              required
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit(onSubmit, () => {
+            const errs = form.formState.errors as Record<
+              string,
+              { message?: string }
+            >;
+            const first = Object.values(errs)[0]?.message;
+            if (first) toast.error(first);
+          })}
+          className="space-y-4"
+        >
+          {form.watch("useUsername") ? (
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel htmlFor="username">Username</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="your_username"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : (
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel htmlFor="email">Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel htmlFor="password">Password</FormLabel>
+                <FormControl>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="flex items-center justify-between gap-4">
+            <FormField
+              control={form.control}
+              name="useUsername"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center space-y-0 space-x-2">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(v) => field.onChange(Boolean(v))}
+                    />
+                  </FormControl>
+                  <FormLabel>Sign in with username</FormLabel>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="rememberMe"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center space-y-0 space-x-2">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={(v) => field.onChange(Boolean(v))}
+                    />
+                  </FormControl>
+                  <FormLabel>Remember me</FormLabel>
+                </FormItem>
+              )}
             />
           </div>
-        ) : (
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setEmail(e.target.value)
-              }
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setPassword(e.target.value)
-            }
-            placeholder="••••••••"
-            required
-          />
-        </div>
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="useUsername"
-            checked={useUsername}
-            onCheckedChange={(v) => setUseUsername(Boolean(v))}
-            disabled={loading}
-          />
-          <Label htmlFor="useUsername">Sign in with username</Label>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="rememberMe"
-            checked={rememberMe}
-            onCheckedChange={(v) => setRememberMe(Boolean(v))}
-            disabled={loading}
-          />
-          <Label htmlFor="rememberMe">Remember me</Label>
-        </div>
-        {error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {error}
-          </p>
-        ) : null}
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "Signing in..." : "Sign in"}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Signing in..." : "Sign in"}
+          </Button>
+        </form>
+      </Form>
 
       <p className="text-muted-foreground text-sm">
         Don't have an account?{" "}

@@ -13,7 +13,7 @@ export default function SignUpPage() {
       <section className="hidden flex-col justify-between bg-black p-10 text-white lg:flex">
         <div className="text-xl font-semibold">Axyl</div>
         <div className="max-w-md space-y-4">
-          <h1 className="text-4xl leading-tight font-bold">
+          <h1 className="text-4xl leading-tight font-medium xl:text-5xl">
             Start building with your free plan
           </h1>
           <p>No credit card required.</p>
@@ -23,7 +23,7 @@ export default function SignUpPage() {
         </div>
       </section>
 
-      <section className="from-background via-background to-background relative flex items-center justify-center bg-gradient-to-br p-6 lg:p-10">
+      <section className="relative flex items-center justify-center bg-gradient-to-br from-indigo-500/15 via-purple-500/15 to-orange-500/15 p-6 lg:p-10 dark:from-indigo-400/10 dark:via-purple-400/10 dark:to-orange-400/10">
         <div className="w-full max-w-md">
           <Card>
             <CardHeader>
