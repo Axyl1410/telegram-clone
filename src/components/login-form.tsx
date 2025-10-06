@@ -18,21 +18,29 @@ type LoginFormProps = React.HTMLAttributes<HTMLDivElement>;
 export function LoginForm({ className, ...props }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  const [useUsername, setUseUsername] = useState(false);
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const { error: signInError } = await authClient.signIn.email({
-        email,
-        password,
-        rememberMe,
-      });
+      const { error: signInError } = useUsername
+        ? await authClient.signIn.username({
+            username,
+            password,
+            rememberMe,
+          })
+        : await authClient.signIn.email({
+            email,
+            password,
+            rememberMe,
+          });
       if (signInError) {
         const message = signInError.message || "Failed to sign in";
         setError(message);
@@ -76,19 +84,35 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
   return (
     <div className={cn("w-full max-w-sm space-y-4", className)} {...props}>
       <form onSubmit={onSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setEmail(e.target.value)
-            }
-            placeholder="you@example.com"
-            required
-          />
-        </div>
+        {useUsername ? (
+          <div className="space-y-2">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setUsername(e.target.value)
+              }
+              placeholder="your_username"
+              required
+            />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setEmail(e.target.value)
+              }
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
           <Input
@@ -101,6 +125,15 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
             placeholder="••••••••"
             required
           />
+        </div>
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="useUsername"
+            checked={useUsername}
+            onCheckedChange={(v) => setUseUsername(Boolean(v))}
+            disabled={loading}
+          />
+          <Label htmlFor="useUsername">Sign in with username</Label>
         </div>
         <div className="flex items-center space-x-2">
           <Checkbox
@@ -122,7 +155,7 @@ export function LoginForm({ className, ...props }: LoginFormProps) {
       </form>
 
       <p className="text-muted-foreground text-sm">
-        Don\'t have an account?{" "}
+        Don't have an account?{" "}
         <Link
           href="/sign-up"
           className="text-primary underline underline-offset-4"

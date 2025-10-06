@@ -148,7 +148,7 @@ export function TelegramChatArea() {
               placeholder="Type a message..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               className="pr-10"
             />
             <Button

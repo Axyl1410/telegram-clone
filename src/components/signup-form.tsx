@@ -17,6 +17,7 @@ type SignupFormProps = React.HTMLAttributes<HTMLDivElement>;
 export function SignupForm({ className, ...props }: SignupFormProps) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -31,6 +32,9 @@ export function SignupForm({ className, ...props }: SignupFormProps) {
         email,
         password,
         name,
+        username,
+        // Prefer a friendly displayUsername; fallback to `name` or raw username
+        displayUsername: name?.trim() ? name : username,
       });
       if (signUpError) {
         const message = signUpError.message || "Failed to sign up";
@@ -85,6 +89,19 @@ export function SignupForm({ className, ...props }: SignupFormProps) {
               setName(e.target.value)
             }
             placeholder="Your name"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="username">Username</Label>
+          <Input
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setUsername(e.target.value)
+            }
+            placeholder="your_username"
             required
           />
         </div>
