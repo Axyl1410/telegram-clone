@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { TriangleAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 export default function GlobalError({
@@ -11,20 +11,17 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
   useEffect(() => {
-    // Optionally log the error to an error reporting service
-    // console.error(error);
-  }, []);
+    console.error(error);
+  }, [error]);
 
   return (
     <html lang="en">
       <body>
-        <div className="relative flex min-h-[70vh] items-center justify-center overflow-hidden px-6">
+        <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-6">
           <div className="to-background pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent" />
           <div className="relative mx-auto w-full max-w-2xl text-center">
-            <div className="bg-background/60 mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border shadow-sm backdrop-blur">
-              <TriangleAlert className="h-8 w-8 text-amber-500" />
-            </div>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
               Something went wrong
             </h1>
@@ -34,6 +31,9 @@ export default function GlobalError({
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <Button onClick={() => reset()}>Try again</Button>
+              <Button variant={"outline"} onClick={() => router.push("/")}>
+                Go home
+              </Button>
             </div>
             <div className="bg-primary/10 pointer-events-none absolute top-1/2 left-1/2 -z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl" />
           </div>

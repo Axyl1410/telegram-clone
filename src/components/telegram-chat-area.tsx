@@ -4,64 +4,252 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MoreVertical, Paperclip, Send, Smile } from "lucide-react";
-import { useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { authClient } from "@/lib/auth-client";
+import { getClientSocket } from "@/lib/socket";
+import {
+  Clock,
+  Loader2,
+  MoreVertical,
+  Paperclip,
+  Send,
+  Smile,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-// Sample message data
-const messages = [
-  {
-    id: 1,
-    sender: "John Doe",
-    content: "Hey, how are you doing?",
-    time: "2:30 PM",
-    isOwn: false,
-    avatar: "https://github.com/shadcn.png",
-  },
-  {
-    id: 2,
-    sender: "You",
-    content: "I'm doing great! Thanks for asking. How about you?",
-    time: "2:32 PM",
-    isOwn: true,
-    avatar: null,
-  },
-  {
-    id: 3,
-    sender: "John Doe",
-    content:
-      "Pretty good! Just working on some new projects. Have you seen the latest updates?",
-    time: "2:33 PM",
-    isOwn: false,
-    avatar: "https://github.com/shadcn.png",
-  },
-  {
-    id: 4,
-    sender: "You",
-    content:
-      "Yes! The new features look amazing. I'm really excited to try them out.",
-    time: "2:35 PM",
-    isOwn: true,
-    avatar: null,
-  },
-  {
-    id: 5,
-    sender: "John Doe",
-    content:
-      "That's awesome! Let me know if you need any help getting started.",
-    time: "2:36 PM",
-    isOwn: false,
-    avatar: "https://github.com/shadcn.png",
-  },
-];
+type Message = {
+  id: string;
+  content?: string | null;
+  createdAt: string;
+  senderId: string;
+  sender: { id: string; name: string; image?: string | null };
+};
 
-export function TelegramChatArea() {
+type Conversation = {
+  id: string;
+  name?: string | null;
+  imageUrl?: string | null;
+  type?: "PRIVATE" | "GROUP";
+  participants: { user: { id: string; name: string; image?: string | null } }[];
+};
+
+async function fetchMessages(chatId: string, limit = 50): Promise<Message[]> {
+  const res = await fetch(`/api/v1/chat/${chatId}/messages?limit=${limit}`);
+  const json = await res.json();
+  return json.data ?? [];
+}
+
+export function TelegramChatArea({
+  chatId,
+  otherUserId,
+}: {
+  chatId: string | null;
+  otherUserId?: string | null;
+}) {
   const [message, setMessage] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userInfo, setUserInfo] = useState<{
+    id: string;
+    name: string;
+    image?: string | null;
+  } | null>(null);
+  const [items, setItems] = useState<Message[]>([]);
+  const [isSending, setIsSending] = useState(false);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [justConfirmedIds, setJustConfirmedIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const socket = useMemo(() => getClientSocket(), []);
+  const router = useRouter();
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      // Here you would typically send the message to your backend
-      console.log("Sending message:", message);
-      setMessage("");
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await authClient.getSession();
+      const id = (data?.user?.id as string) || null;
+      setUserId(id);
+      if (data?.user) {
+        setUserInfo({
+          id: id || "",
+          name: data.user.name || "You",
+          image: data.user.image,
+        });
+      }
+      // In a full app, chatId comes from route or sidebar selection
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    const loadOther = async () => {
+      if (!otherUserId) return;
+      const res = await fetch(`/api/v1/users/${otherUserId}`);
+      const json = await res.json();
+      if (json?.ok && json.data) {
+        // Show a header for the user even when no messages yet
+        // We keep items empty until first sent/received message
+      }
+    };
+    loadOther();
+  }, [otherUserId]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    fetchMessages(chatId).then((list) => setItems(list.reverse()));
+    fetch(`/api/v1/chat/${chatId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.ok && j.data) setConversation(j.data);
+      })
+      .catch(() => {});
+    // Join with since = last message timestamp to backfill recent
+    const lastTs = items.length ? items[items.length - 1].createdAt : undefined;
+    socket.emit("chat:join", chatId, lastTs);
+    const onNew = ({
+      chatId: c,
+      message,
+    }: {
+      chatId: string;
+      message: Message;
+    }) => {
+      if (c !== chatId) return;
+      setItems((prev) => {
+        if (prev.find((m) => m.id === message.id)) return prev;
+        const tempIndex = prev.findIndex(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            m.senderId === message.senderId &&
+            m.content === message.content,
+        );
+        if (tempIndex >= 0) {
+          const next = prev.slice();
+          next[tempIndex] = message;
+          // mark as just confirmed for a brief highlight
+          setJustConfirmedIds((prevSet) => {
+            const copy = new Set(prevSet);
+            copy.add(message.id);
+            return copy;
+          });
+          setTimeout(() => {
+            setJustConfirmedIds((prevSet) => {
+              const copy = new Set(prevSet);
+              copy.delete(message.id);
+              return copy;
+            });
+          }, 700);
+          return next;
+        }
+        return [...prev, message];
+      });
+    };
+    socket.on("chat:new-message", onNew);
+    const onRecent = ({
+      chatId: c,
+      messages,
+    }: {
+      chatId: string;
+      messages: Message[];
+    }) => {
+      if (c !== chatId || !messages?.length) return;
+      setItems((prev) => {
+        // Merge avoiding duplicates
+        const seen = new Set(prev.map((m) => m.id));
+        const merged = [...prev];
+        messages.forEach((m) => {
+          if (!seen.has(m.id)) merged.push(m);
+        });
+        return merged;
+      });
+    };
+    socket.on("chat:recent", onRecent);
+    return () => {
+      socket.off("chat:new-message", onNew);
+      socket.off("chat:recent", onRecent);
+      socket.emit("chat:leave", chatId);
+    };
+  }, [chatId, socket, items]);
+
+  // Auto-scroll whenever the number of messages changes
+  useEffect(() => {
+    if (items.length >= 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [items]);
+
+  const handleSendMessage = async () => {
+    const content = message.trim();
+    if (!content || !userId || isSending) return;
+    setIsSending(true);
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: Message = {
+      id: tempId,
+      content,
+      createdAt: new Date().toISOString(),
+      senderId: userId,
+      sender: {
+        id: userInfo?.id || userId,
+        name: userInfo?.name || "You",
+        image: userInfo?.image,
+      },
+    } as Message;
+    setItems((prev) => [...prev, optimistic]);
+    setMessage("");
+    try {
+      let res: Response;
+      if (chatId) {
+        res = await fetch(`/api/v1/chat/${chatId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ senderId: userId, content }),
+        });
+      } else if (otherUserId) {
+        const createRes = await fetch(`/api/v1/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, otherUserId }),
+        });
+        const created = await createRes.json();
+        if (!created?.ok || !created.data?.id)
+          throw new Error("Failed to create chat");
+        const newChatId = created.data.id as string;
+        // join the newly created chat room and navigate so header/meta load
+        socket.emit("chat:join", newChatId);
+        router.push(`/chat/${newChatId}`);
+        res = await fetch(`/api/v1/chat/${newChatId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ senderId: userId, content }),
+        });
+      } else {
+        throw new Error("Missing chat context");
+      }
+      const json = await res.json();
+      if (json?.ok && json.data) {
+        const serverMsg: Message = json.data;
+        setItems((prev) => prev.map((m) => (m.id === tempId ? serverMsg : m)));
+        // mark as just confirmed for a brief highlight
+        setJustConfirmedIds((prevSet) => {
+          const copy = new Set(prevSet);
+          copy.add(serverMsg.id);
+          return copy;
+        });
+        setTimeout(() => {
+          setJustConfirmedIds((prevSet) => {
+            const copy = new Set(prevSet);
+            copy.delete(serverMsg.id);
+            return copy;
+          });
+        }, 700);
+      } else {
+        setItems((prev) => prev.filter((m) => m.id !== tempId));
+        setMessage(content);
+      }
+    } catch {
+      setItems((prev) => prev.filter((m) => m.id !== tempId));
+      setMessage(content);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -72,19 +260,68 @@ export function TelegramChatArea() {
     }
   };
 
+  const headerName = (() => {
+    if (
+      conversation?.type === "PRIVATE" &&
+      userId &&
+      conversation?.participants
+    ) {
+      const other = conversation.participants
+        .map((p) => p.user)
+        .find((u) => u.id !== userId);
+      if (other?.name) return other.name;
+    }
+    if (conversation?.name) return conversation.name;
+    return "Conversation";
+  })();
+  const headerImage = (() => {
+    if (
+      conversation?.type === "PRIVATE" &&
+      userId &&
+      conversation?.participants
+    ) {
+      const other = conversation.participants
+        .map((p) => p.user)
+        .find((u) => u.id !== userId);
+      if (other?.image) return other.image;
+    }
+    return conversation?.imageUrl || "";
+  })();
+
+  const showHeaderSkeleton = !chatId && !conversation && !otherUserId;
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* Chat Header */}
       <div className="bg-background flex flex-shrink-0 items-center justify-between border-b p-4">
         <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarImage src="https://github.com/shadcn.png" alt="John Doe" />
-            <AvatarFallback>JD</AvatarFallback>
-          </Avatar>
-          <div>
-            <h2 className="font-semibold">John Doe</h2>
-            <p className="text-muted-foreground text-sm">Online</p>
-          </div>
+          {showHeaderSkeleton ? (
+            <>
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </>
+          ) : (
+            <>
+              <Avatar className="h-10 w-10">
+                <AvatarImage
+                  src={headerImage}
+                  alt={headerName}
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                />
+                <AvatarFallback>
+                  {headerName.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h2 className="font-semibold">{headerName}</h2>
+                <p className="text-muted-foreground text-sm">&nbsp;</p>
+              </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon">
@@ -96,44 +333,72 @@ export function TelegramChatArea() {
       {/* Messages Area */}
       <ScrollArea className="min-h-0 flex-1 p-4">
         <div className="space-y-4">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 ${
-                msg.isOwn ? "flex-row-reverse" : "flex-row"
-              }`}
-            >
-              {!msg.isOwn && (
-                <Avatar className="mt-1 h-8 w-8">
-                  <AvatarImage src={msg.avatar || ""} alt={msg.sender} />
-                  <AvatarFallback>
-                    {msg.sender
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
-                  </AvatarFallback>
-                </Avatar>
-              )}
+          {items.map((msg) => {
+            const isTempMessage = msg.id.startsWith("temp-");
+            const isJustConfirmed = justConfirmedIds.has(msg.id);
+            return (
               <div
-                className={`max-w-[70%] rounded-lg px-3 py-2 ${
-                  msg.isOwn
-                    ? "bg-primary text-primary-foreground ml-auto"
-                    : "bg-muted"
+                key={msg.id}
+                className={`flex gap-3 ${
+                  msg.senderId === userId ? "flex-row-reverse" : "flex-row"
                 }`}
               >
-                <p className="text-sm">{msg.content}</p>
-                <p
-                  className={`mt-1 text-xs ${
-                    msg.isOwn
-                      ? "text-primary-foreground/70"
-                      : "text-muted-foreground"
+                {msg.senderId !== userId && (
+                  <Avatar className="mt-1 h-8 w-8">
+                    <AvatarImage
+                      src={msg.sender?.image || ""}
+                      alt={msg.sender?.name || "U"}
+                    />
+                    <AvatarFallback>
+                      {(msg.sender?.name || "U")
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div
+                  className={`max-w-[70%] rounded-lg px-3 py-2 transition-all duration-300 ease-out ${
+                    msg.senderId === userId
+                      ? isTempMessage
+                        ? "bg-primary/70 text-primary-foreground ml-auto animate-pulse"
+                        : "bg-primary text-primary-foreground ml-auto"
+                      : "bg-muted"
                   }`}
                 >
-                  {msg.time}
-                </p>
+                  <div
+                    className={`${
+                      isJustConfirmed && msg.senderId === userId
+                        ? "ring-primary/40 rounded-md ring-1"
+                        : ""
+                    }`}
+                  >
+                    <p className="text-sm">{msg.content}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <p
+                        className={`text-xs ${
+                          msg.senderId === userId
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {new Date(msg.createdAt).toLocaleTimeString()}
+                      </p>
+                      {isTempMessage && msg.senderId === userId && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="text-primary-foreground/70 h-3 w-3" />
+                          <span className="text-primary-foreground/70 text-xs">
+                            Đang gửi...
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+          <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
@@ -159,8 +424,16 @@ export function TelegramChatArea() {
               <Smile className="h-4 w-4" />
             </Button>
           </div>
-          <Button onClick={handleSendMessage} size="icon">
-            <Send className="h-4 w-4" />
+          <Button
+            onClick={handleSendMessage}
+            size="icon"
+            disabled={!message.trim() || !userId || isSending}
+          >
+            {isSending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </div>

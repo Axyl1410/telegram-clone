@@ -33,7 +33,7 @@ export default function Home() {
 
           {/* Main Chat Area */}
           <div className="flex flex-1 overflow-hidden">
-            <TelegramChatArea />
+            <TelegramChatArea chatId={null} />
           </div>
         </SidebarInset>
       </SidebarProvider>
